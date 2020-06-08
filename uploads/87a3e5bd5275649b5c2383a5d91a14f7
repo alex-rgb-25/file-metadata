@@ -1,0 +1,234 @@
+// INDEX.JS:
+
+
+var express = require("express");
+var app = express();
+var mongoose = require("mongoose")
+var bodyParser = require('body-parser');
+var session = require('express-session')
+var flash = require('connect-flash');
+
+app.use(express.static(__dirname + '/node_modules/bootstrap/dist'));
+app.use(express.static(__dirname + "/public"));
+
+//body parser
+app.use(bodyParser.json()); 
+app.use(bodyParser.urlencoded({ extended: true }));
+
+//flash messages
+app.use(require("express-session")({
+    secret: "Secret secret ding dong pong?",
+    resave:false,
+    saveUninitialized: false
+}));
+app.use(flash());
+app.use(function(req,res, next){
+    res.locals.currentUser = req.user;
+    res.locals.error = req.flash("error");
+    res.locals.success = req.flash("success");
+    next();
+});
+app.set("view engine", "ejs");
+
+//Get the default connection
+var db = mongoose.connection;
+//Bind connection to error event (to get notification of connection errors)
+mongoose.connect('mongodb://localhost:27017/exercise', {useNewUrlParser: true});
+db.on('error', console.error.bind(console, 'MongoDB connection error:'));
+
+var Schema = mongoose.Schema;
+
+var usersSchema=new Schema({
+    username: String,
+    password: String,
+    description: String,
+    duration: String,
+    reps: Number,
+    date: String
+})
+//define the model:
+var User = mongoose.model('User', usersSchema);
+
+
+app.get("/", function(req,res){
+    
+    res.render("landing.ejs",{message: req.flash("error")})
+})
+
+app.get("/signup", function(req, res){
+    res.render("signup",{message: req.flash("error")});
+})
+
+
+app.post("/api/exercise/new-user", function(req,res){
+    //req.body.username .password
+
+    User.findOne({username:req.body.username},function(err, found){
+        if(err) return handleError(err);
+        console.log("i am here!: "+ found)
+        if(found!=null){
+            res.render("signup", {message: "username taken"},);
+        } else{
+            User.create({username: req.body.username, password: req.body.password, description:'example description',
+        duration:30, date:'11-02-2020'}, function(err, newCreated){
+                if(err) return handleError(err);
+                console.log(req.body.username)
+                res.render("landing", {message: "account created! please login"},);
+            })
+            
+        }
+    })
+   
+    console.log("hit the post route")
+    
+})
+
+app.get("/api/exercise/users", function(req, res){
+    User.find(function(req, found){
+        res.render("users", {user:found});
+    })
+})
+
+
+
+app.post("/api/exercise/log", function(req, res){
+    User.find({username:req.body.username},function(err, found){
+        if(err) return handleError(err);
+        console.log("here found: "+found)
+        if(found==null || found[0]==null){
+            res.render("landing", {message: "wrong username or password"},);
+        }else if(req.body.username==found[0].username && req.body.password==found[0].password)
+        {
+            res.render("workout.ejs", {user:found});
+        }  else{
+            res.render("landing", {message: "wrong username or password"},);
+        }
+    })
+   
+    console.log("hit the post route")
+})
+
+app.get("/api/exercise/add", function(req, res){
+
+    res.render("landing")
+ })
+
+
+app.get("/api/exercise/log", function(req, res){
+
+    //get the username and reupdate the page with the newest data.
+    var passedVariable = req.query.valid;
+
+    User.find({username: passedVariable},function(err, found){
+        if(err) return handleError(err);
+        res.render("workout.ejs", {user:found});
+    })
+   
+})
+
+app.post("/api/exercise/add", (req, res)=>{
+
+    if(req.body.date==""){
+        var d = new Date();
+    }else{ var d= new Date(req.body.date)}
+    var date = d.getDate();
+    var month = d.getMonth() + 1; // Since getMonth() returns month from 0-11 not 1-12
+    var year = d.getFullYear();
+    var dateStr = date + "-" + month + "-" + year;
+    
+   User.find({username: req.body.username}, function(err, allNew){
+       User.create({username: req.body.username, password: req.body.password,
+            description: req.body.description, duration: req.body.duration, date: dateStr, reps:req.body.reps},
+             function (err, newCreated){
+                if(err) return handleError(err);
+                console.log(req.body.username)
+                
+            })
+          res.redirect("/api/exercise/log?valid="+req.body.username)  //pass the username
+    })
+   
+})
+
+
+
+app.listen(process.env.PORT || 3000, function(req, res){
+    console.log("Server started!");
+})
+
+
+
+
+
+
+
+WORKOUT.EJS:
+
+
+<%- include('../partials/main'); -%>
+
+<div class="container">
+
+  <div class = "row">
+    <div class="col-sm-4">
+ <header style="height: 70vh; ">
+  <h3 style="display:block;"> Track a new exercise!</h3>
+        <form action="/api/exercise/add" method="POST">
+            <div class="form-group">
+              <input name="username" value='<%= user[0].username%>' readonly type="text" class="form-control" >
+               </div>
+               <div class="form-group">
+                <input name="description" required placeholder = "add description" type="text" class="form-control" >
+                 </div>
+                 <div class="form-group">
+                  <input name="reps"  placeholder = "no. reps" type="number" class="form-control" >
+                   </div>
+                 <div class="form-group">
+                  <input name="duration"  placeholder = "add duration" type="text" class="form-control" >
+                   </div>
+                 <div class="form-group">
+                  <input name="date" placeholder = "yyyy-mm-dd" type="date" class="form-control">
+                   </div>
+            <button type="submit" class="btn btn-primary">Add Exercise</button>
+          </form>
+          <h3>View logs -from-to-limit</h3>
+          <form action="/api/exercise/add" method="POST">
+            <div class="form-group">
+              <input name="username" value='<%= user[0].username%>' readonly type="text" class="form-control" >
+               </div>
+               <div class="form-group">
+                <input name="from" required type="date" class="form-control" >
+                 </div>
+                 <div class="form-group">
+                  <input name="to" required type="date" class="form-control" >
+                   </div>
+                   <div class="form-group">
+                    <input name="limit" placeholder="limit" required type="number" class="form-control" >
+                     </div>
+            <button type="submit" class="btn btn-primary">View</button>
+          </form>
+
+
+      </header>
+      </div>
+
+<div class="col-sm-8">
+
+  <div class="row">
+
+    <% user.forEach(function(all){ %>
+      <div class = "col-sm-6" >
+        <div style="border: 1px solid black; border-radius: 5px;margin:3px; background-color: #D19C1D;">
+      <h4 style="background-color: #7D451B; text-align: center;"><%=all.description%></h4>
+      <div style="padding-left: 5px;">
+      <h4>duration: <%=all.duration%> mins</h4><hr>
+      <h4>reps: <%=all.reps%></h4><hr>
+      <h4>date: <%=all.date%></h4></div>
+    </div>
+    </div>
+      <% }) %>
+    
+    </div>
+
+    </div>
+    </div>
+    </div>
